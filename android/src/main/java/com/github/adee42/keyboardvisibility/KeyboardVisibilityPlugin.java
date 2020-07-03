@@ -1,36 +1,68 @@
 package com.github.adee42.keyboardvisibility;
 
+import io.flutter.Log;
+import io.flutter.embedding.engine.plugins.activity.ActivityAware;
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
+import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.EventChannel.EventSink;
 import io.flutter.plugin.common.EventChannel.StreamHandler;
-import io.flutter.plugin.common.MethodChannel;
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
-import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.MethodCall;
-import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
+import io.flutter.embedding.engine.plugins.FlutterPlugin;
 
 import android.app.Activity;
-import android.app.Application;
-import android.content.Intent;
 import android.graphics.Rect;
-import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 
+import androidx.annotation.NonNull;
 
-public class KeyboardVisibilityPlugin implements StreamHandler, Application.ActivityLifecycleCallbacks, ViewTreeObserver.OnGlobalLayoutListener {
+
+/**
+ * Compatible v1/v2 plugin 插件问题
+ *
+ * @author WangKing
+ */
+public class KeyboardVisibilityPlugin implements StreamHandler, ActivityAware, ViewTreeObserver.OnGlobalLayoutListener , FlutterPlugin {
+    private static final String TAG = "WangKing:KeyboardVisibilityPlugin";
+
     private static final String STREAM_CHANNEL_NAME = "github.com/adee42/flutter_keyboard_visibility";
-    View mainView = null;
-    EventSink eventsSink;
-    Registrar registrar;
-    boolean isVisible;
+    private View mainView = null;
 
+    private EventSink eventsSink;
+    private EventChannel eventChannel;
 
-    KeyboardVisibilityPlugin(Registrar registrar) {
-		this.registrar = registrar;
+    private boolean isVisible;
+
+    /**
+     * Plugin v1 版本
+     * @param registrar Receiver of registrations from a single plugin.
+     */
+    public static void registerWith(Registrar registrar) {
+        KeyboardVisibilityPlugin instance = new KeyboardVisibilityPlugin();
+        instance.onAttachedToEngine(registrar.messenger());
+    }
+
+    /**
+     * Plugin v2 版本支持
+     * @param binding  Resources made available to all plugins registered with a given from FlutterEngine
+     */
+    @Override
+    public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
+        onAttachedToEngine(binding.getBinaryMessenger());
+    }
+
+    private void onAttachedToEngine(BinaryMessenger messenger){
+        eventChannel = new EventChannel(messenger,STREAM_CHANNEL_NAME);
+        eventChannel.setStreamHandler(this);
+    }
+
+    @Override
+    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         eventsSink = null;
+        eventChannel.setStreamHandler(null);
+        eventChannel = null ;
     }
 
     @Override
@@ -38,57 +70,28 @@ public class KeyboardVisibilityPlugin implements StreamHandler, Application.Acti
         Rect r = new Rect();
 
         if (mainView != null) {
-			mainView.getWindowVisibleDisplayFrame(r);
+            mainView.getWindowVisibleDisplayFrame(r);
 
-			// check if the visible part of the screen is less than 85%
-			// if it is then the keyboard is showing
-			boolean newState = ((double)r.height() / (double)mainView.getRootView().getHeight()) < 0.85;
+            // check if the visible part of the screen is less than 85%
+            // if it is then the keyboard is showing
+            boolean newState = ((double)r.height() / (double)mainView.getRootView().getHeight()) < 0.85;
 
-			if (newState != isVisible) {
-				isVisible = newState;
-				if (eventsSink != null) {
-					eventsSink.success(isVisible ? 1 : 0);
-				}
-			}
-		}
+            if (newState != isVisible) {
+                isVisible = newState;
+                if (eventsSink != null) {
+                    eventsSink.success(isVisible ? 1 : 0);
+                }
+            }
+        }
     }
 
-    @Override
-    public void onActivityCreated(Activity activity, Bundle bundle) {
-    }
-
-    @Override
-    public void onActivityStarted(Activity activity) {
+    private void registerListener(Activity activity){
         try {
             mainView = ((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
             mainView.getViewTreeObserver().addOnGlobalLayoutListener(this);
+        } catch (Exception e) {
+            Log.w(TAG,"exception: " + e.getMessage());
         }
-        catch (Exception e) {
-            // do nothing
-        }
-    }
-
-    @Override
-    public void onActivityResumed(Activity activity) {
-    }
-
-    @Override
-    public void onActivityPaused(Activity activity) {
-    }
-
-    @Override
-    public void onActivityStopped(Activity activity) {
-        unregisterListener();
-    }
-
-    @Override
-    public void onActivitySaveInstanceState(Activity activity, Bundle bundle) {
-    }
-
-    @Override
-    public void onActivityDestroyed(Activity activity) {
-
-        unregisterListener();
     }
 
     private void unregisterListener() {
@@ -96,15 +99,6 @@ public class KeyboardVisibilityPlugin implements StreamHandler, Application.Acti
             mainView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
             mainView = null;
         }
-    }
-
-    public static void registerWith(Registrar registrar) {
-
-        final EventChannel eventChannel = new EventChannel(registrar.messenger(), STREAM_CHANNEL_NAME);
-        KeyboardVisibilityPlugin instance = new KeyboardVisibilityPlugin(registrar);
-        eventChannel.setStreamHandler(instance);
-
-        registrar.activity().getApplication().registerActivityLifecycleCallbacks(instance);
     }
 
     @Override
@@ -122,4 +116,17 @@ public class KeyboardVisibilityPlugin implements StreamHandler, Application.Acti
     public void onCancel(Object arguments) {
         eventsSink = null;
     }
+
+    @Override
+    public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) { registerListener(binding.getActivity()); }
+
+    @Override
+    public void onDetachedFromActivity() { unregisterListener(); }
+
+    @Override
+    public void onDetachedFromActivityForConfigChanges() {}
+
+    @Override
+    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {}
+
 }
