@@ -130,3 +130,4 @@ public class KeyboardVisibilityPlugin implements StreamHandler, ActivityAware, V
     public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {}
 
 }
+
